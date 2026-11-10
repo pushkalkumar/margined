@@ -112,6 +112,12 @@ cd backend && pip install -r requirements.txt && pytest  # 23 API tests
 cd frontend && npm install && npx tsc --noEmit && npm run build
 ```
 
+## Known limitations
+
+Stripe Connect is not finished on the backend. `GET /stripe/connect/{project_id}` builds the OAuth URL, but there is no callback route that exchanges the code, and the `state` parameter is the raw project ID rather than a signed value. Customer mapping and MRR refresh call Stripe with the platform's own secret key instead of the connected account, so on the hosted service MRR lookups only work for customers in Margined's own Stripe account. Self-hosters who point `STRIPE_SECRET_KEY` at a restricted read-only key for their own account are not affected.
+
+The `/ingest` rate limiter is in memory, so on serverless hosts it is per instance rather than global.
+
 ## FAQ
 
 **How is this different from Langfuse / LangSmith / Portkey?**

@@ -23,7 +23,7 @@ export default function Terms() {
         <p>
           You retain all rights to data you send. You grant us the limited right to
           process it to provide the service. You are responsible for ensuring you may
-          lawfully share the identifiers you send (use pseudonymous customer IDs — never
+          lawfully share the identifiers you send (use pseudonymous customer IDs, never
           raw emails if your policies forbid it).
         </p>
       </DocSection>

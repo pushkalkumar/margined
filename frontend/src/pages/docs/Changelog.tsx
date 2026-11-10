@@ -2,6 +2,17 @@ import DocPage from "./DocPage";
 
 const ENTRIES: Array<{ date: string; title: string; notes: string[] }> = [
   {
+    date: "2026-11-09",
+    title: "Phone layout, a demo you can edit, and honest numbers",
+    notes: [
+      "The dashboard works on a phone: a top bar with a slide-out menu replaces the fixed sidebar below tablet width.",
+      "Demo figures now reconcile everywhere. Feature costs and daily costs add up to each customer's total, recent calls are priced per model, and the landing page reads from the same dataset.",
+      "In the demo, alerts, Stripe mappings and key rotation actually change things until you reload.",
+      "Failed requests show what went wrong and a retry button instead of an empty table.",
+      "Keyboard access for customer rows, labelled icon buttons and form fields, and a real 404 page.",
+    ],
+  },
+  {
     date: "2026-07-27",
     title: "Node SDK, billing, and the ledger redesign",
     notes: [
@@ -15,7 +26,7 @@ const ENTRIES: Array<{ date: string; title: string; notes: string[] }> = [
     date: "2026-07-26",
     title: "Cache-aware pricing and idempotent ingestion",
     notes: [
-      "All four token classes tracked per call: uncached input, output, cache reads, cache writes — priced at each provider's actual rates.",
+      "All four token classes tracked per call: uncached input, output, cache reads, cache writes, each priced at each provider's actual rates.",
       "Every event carries a client-generated ID; the ingest API dedupes, so retried flushes can never double-count cost.",
       "Server-side cost recompute from raw token counts; client cost is a hint, not a trusted value.",
       "Streaming support in the Python SDK (Anthropic and OpenAI streams).",
@@ -42,7 +53,7 @@ export default function Changelog() {
               <ul className="space-y-2 text-[15px] leading-relaxed text-foreground/90 max-w-[65ch] list-none">
                 {entry.notes.map((note) => (
                   <li key={note} className="pl-5 relative">
-                    <span className="absolute left-0 text-muted-foreground">—</span>
+                    <span aria-hidden className="absolute left-0 top-[0.7em] h-px w-2.5 bg-muted-foreground" />
                     {note}
                   </li>
                 ))}

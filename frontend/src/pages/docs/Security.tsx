@@ -7,7 +7,7 @@ export default function Security() {
         <p>
           The SDK sends usage metadata only: your customer ID, a feature name, the model
           name, token counts, computed cost, and a timestamp. It never sends prompts,
-          completions, or message content — there is no field for them in the event schema,
+          completions, or message content. There is no field for them in the event schema,
           which is public in the SDK source.
         </p>
       </DocSection>
@@ -15,7 +15,7 @@ export default function Security() {
         <p>
           Margined reads subscriptions only. Connect with a restricted, read-only key (or
           Stripe Connect with the <code>read_only</code> scope). We store one number per
-          customer — normalized monthly recurring revenue — plus the plan name. We cannot
+          customer (normalized monthly recurring revenue) plus the plan name. We cannot
           create charges, issue refunds, or see card details.
         </p>
       </DocSection>
@@ -39,15 +39,15 @@ export default function Security() {
       <DocSection heading="Self-hosting">
         <p>
           The entire stack is MIT-licensed and runs on your own Supabase project and any
-          Python host. If sending usage data to a third party is a blocker, run it yourself
-          — the docs include a complete self-hosting guide.
+          Python host. If sending usage data to a third party is a blocker, run it yourself:
+          the docs include a complete self-hosting guide.
         </p>
       </DocSection>
       <DocSection heading="Deletion & export">
         <p>
           Deleting a project deletes its events. Full account deletion and data export are
           available on request while self-serve tooling is built. Contact
-          security@trymargined.com — also the address for vulnerability reports; we respond
+          security@trymargined.com, which is also the address for vulnerability reports. We respond
           within 48 hours.
         </p>
       </DocSection>
