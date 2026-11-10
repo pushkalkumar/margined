@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import * as demo from "./demo";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -6,6 +7,31 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export function isNotFound(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { status?: number }).status === 404;
+}
+
+/** A short, human message for an error thrown by any api call. */
+export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401 || err.status === 403) return "Your session has expired. Sign in again.";
+    if (err.status >= 500) return "The Margined API is having trouble. Try again in a moment.";
+    return err.message.replace(/^API error \d+:\s*/, "") || `Request failed (${err.status}).`;
+  }
+  if (err instanceof TypeError) return "Could not reach the Margined API. Check your connection.";
+  if (err instanceof Error && err.message) return err.message;
+  return "Something went wrong.";
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -20,7 +46,14 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
+    let detail = text;
+    try {
+      const body = JSON.parse(text) as { detail?: unknown };
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      /* plain-text error body */
+    }
+    throw new ApiError(res.status, `API error ${res.status}: ${detail}`);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -138,66 +171,107 @@ const realApi = {
 };
 
 // ── Demo mode ──────────────────────────────────────────────
-// When no backend is configured (public deployment), the whole dashboard
-// runs on a deterministic seeded dataset — same shapes, no network.
+// The /demo dashboard runs on a deterministic seeded dataset with the same
+// shapes and no network. Writes go to an in-memory store, so adding,
+// toggling and deleting visibly work until the page reloads.
+
+export const DEMO_BILLING_MESSAGE =
+  "Billing is turned off in the demo. Create an account to manage a real plan.";
 
 function buildDemoApi(): typeof realApi {
-  // Lazy import keeps the demo dataset out of the bundle's hot path
-  const demo = () => import("./demo");
+  const store = {
+    project: { ...demo.demoProject },
+    alerts: demo.demoAlerts.map((a) => ({ ...a })),
+    stripe: demo.demoStripeCustomers.map((c) => ({ ...c })),
+  };
+  const respond = demo.demoResponse;
+  const newKey = () =>
+    "mgd_demo_" +
+    Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+
   return {
     projects: {
-      list: () => demo().then((d) => d.demoResponse([d.demoProject])),
-      create: () => demo().then((d) => d.demoResponse(d.demoProject)),
-      get: () => demo().then((d) => d.demoResponse(d.demoProject)),
-      rotateKey: () => demo().then((d) => d.demoResponse(d.demoProject)),
+      list: () => respond(() => [{ ...store.project }]),
+      create: () => respond(() => ({ ...store.project })),
+      get: () => respond(() => ({ ...store.project })),
+      rotateKey: () =>
+        respond(() => {
+          store.project = { ...store.project, api_key: newKey() };
+          return { ...store.project };
+        }),
       delete: () => Promise.resolve(undefined),
     },
-    summary: () => demo().then((d) => d.demoResponse(d.demoSummary)),
-    trend: (_projectId: string, days = 30) =>
-      demo().then((d) => d.demoResponse(d.demoTrend(days))),
+    summary: () => respond(demo.demoSummary),
+    trend: (_projectId: string, days = 30) => respond(() => demo.demoTrend(days)),
     customers: {
-      list: () => demo().then((d) => d.demoResponse(d.demoCustomers)),
+      list: () => respond(demo.demoCustomers),
       get: (_projectId: string, customerId: string) =>
-        demo().then((d) => d.demoResponse(d.demoCustomerDetail(customerId))),
+        respond(() => demo.demoCustomerDetail(customerId)),
     },
-    features: () => demo().then((d) => d.demoResponse(d.demoFeatures)),
+    features: () => respond(demo.demoFeatures),
     calculator: (_projectId: string, targetMargin = 0.7) =>
-      demo().then((d) => d.demoResponse(d.demoCalculator(targetMargin))),
+      respond(() => demo.demoCalculator(targetMargin)),
     alerts: {
-      list: () => demo().then((d) => d.demoResponse(d.demoAlerts)),
+      list: () => respond(() => store.alerts.map((a) => ({ ...a }))),
       create: (_projectId: string, body: CreateAlertBody) =>
-        demo().then((d) =>
-          d.demoResponse({ ...d.demoAlerts[0], ...body, id: `demo-${Date.now()}` }),
-        ),
-      delete: () => Promise.resolve(undefined),
-      toggle: (_projectId: string, _alertId: string, enabled: boolean) =>
-        demo().then((d) => d.demoResponse({ ...d.demoAlerts[0], enabled })),
+        respond(() => {
+          const alert: AlertConfig = {
+            ...body,
+            id: `demo-${Date.now()}`,
+            last_fired_at: null,
+            enabled: true,
+          };
+          store.alerts = [...store.alerts, alert];
+          return { ...alert };
+        }),
+      delete: (_projectId: string, alertId: string) =>
+        respond(() => {
+          store.alerts = store.alerts.filter((a) => a.id !== alertId);
+          return undefined;
+        }),
+      toggle: (_projectId: string, alertId: string, enabled: boolean) =>
+        respond(() => {
+          store.alerts = store.alerts.map((a) => (a.id === alertId ? { ...a, enabled } : a));
+          const updated = store.alerts.find((a) => a.id === alertId);
+          if (!updated) throw new Error("API error 404: alert not found");
+          return { ...updated };
+        }),
     },
     billing: {
       status: () =>
-        Promise.resolve({
+        respond({
           plan: "starter" as const,
           events_used: 412_384,
           events_limit: 1_000_000,
           month: new Date().toISOString().slice(0, 7),
         }),
-      checkout: () => Promise.resolve({ url: "#" }),
-      portal: () => Promise.resolve({ url: "#" }),
+      checkout: () => Promise.reject(new Error(DEMO_BILLING_MESSAGE)),
+      portal: () => Promise.reject(new Error(DEMO_BILLING_MESSAGE)),
     },
     stripe: {
-      listCustomers: () => demo().then((d) => d.demoResponse(d.demoStripeCustomers)),
+      listCustomers: () => respond(() => store.stripe.map((c) => ({ ...c }))),
       mapCustomer: (_projectId: string, body: { customer_id: string; stripe_customer: string }) =>
-        demo().then((d) =>
-          d.demoResponse({ ...body, current_mrr_usd: 99, plan_name: "Growth" }),
-        ),
-      refresh: () => Promise.resolve({ refreshed: 0 }),
+        respond(() => {
+          const known = demo.demoCustomers.find((c) => c.customer_id === body.customer_id);
+          const mapping: StripeCustomer = {
+            ...body,
+            current_mrr_usd: known?.mrr ?? 99,
+            plan_name: known?.plan ?? "Growth",
+          };
+          store.stripe = [
+            ...store.stripe.filter((c) => c.customer_id !== body.customer_id),
+            mapping,
+          ];
+          return { ...mapping };
+        }),
+      refresh: () => respond({ refreshed: store.stripe.length }),
     },
   };
 }
 
-import { isDemoActive } from "./demo";
+const { isDemoActive } = demo;
 
-const demoApi = buildDemoApi();
+let demoApi: typeof realApi | null = null;
 
 // Per-call delegation so one page load can serve both a real session and a
 // /demo visitor without a rebuild.
@@ -205,7 +279,7 @@ function delegate(path: string[]): unknown {
   return new Proxy(function () {} as unknown as object, {
     get: (_target, prop: string) => delegate([...path, prop]),
     apply: (_target, _thisArg, args: unknown[]) => {
-      let impl: unknown = isDemoActive() ? demoApi : realApi;
+      let impl: unknown = isDemoActive() ? (demoApi ??= buildDemoApi()) : realApi;
       for (const key of path) impl = (impl as Record<string, unknown>)[key];
       return (impl as (...a: unknown[]) => unknown)(...args);
     },
