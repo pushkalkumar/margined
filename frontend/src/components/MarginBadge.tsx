@@ -32,7 +32,9 @@ export function MarginBadge({ margin, status, showPercent = true }: Props) {
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium figure", config.text)}>
       <span className={cn("h-1.5 w-1.5 rounded-full", config.dot)} />
       {showPercent ? display : null}
-      {config.label && <span className="text-[11px] font-normal opacity-80">{config.label}</span>}
+      {config.label && (
+        <span className="text-[11px] font-normal opacity-80 hidden sm:inline">{config.label}</span>
+      )}
     </span>
   );
 }

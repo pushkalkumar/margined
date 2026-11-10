@@ -1,13 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  TrendingUp,
-  Users,
-  DollarSign,
-  ExternalLink,
-} from "lucide-react";
+import { AlertTriangle, TrendingUp, Users, DollarSign, ArrowRight } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -19,37 +13,67 @@ import {
 } from "recharts";
 import { api, CustomerRow, FeatureRow } from "@/lib/api";
 import { MarginBadge } from "@/components/MarginBadge";
+import { QueryError } from "@/components/QueryError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 
 export default function Dashboard() {
   const { projectId } = useParams();
-  const navigate = useNavigate();
+  usePageTitle("Dashboard");
 
-  const { data: projects = [] } = useQuery({
+  const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: api.projects.list,
   });
+  const projects = projectsQuery.data ?? [];
 
   const pid = projectId ?? projects[0]?.id;
 
-  const { data: summary, isLoading: summaryLoading } = useQuery({
+  const summaryQuery = useQuery({
     queryKey: ["summary", pid],
     queryFn: () => api.summary(pid!),
     enabled: !!pid,
   });
 
-  const { data: customers = [], isLoading: customersLoading } = useQuery({
+  const customersQuery = useQuery({
     queryKey: ["customers", pid],
     queryFn: () => api.customers.list(pid!),
     enabled: !!pid,
   });
 
-  const { data: features = [], isLoading: featuresLoading } = useQuery({
+  const featuresQuery = useQuery({
     queryKey: ["features", pid],
     queryFn: () => api.features(pid!),
     enabled: !!pid,
   });
+
+  const summary = summaryQuery.data;
+  const summaryLoading = summaryQuery.isLoading;
+  const customers = customersQuery.data ?? [];
+  const features = featuresQuery.data ?? [];
+
+  if (projectsQuery.isError) {
+    return (
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto">
+        <QueryError
+          error={projectsQuery.error}
+          onRetry={() => projectsQuery.refetch()}
+          isRetrying={projectsQuery.isFetching}
+        />
+      </div>
+    );
+  }
+
+  if (projectsQuery.isLoading) {
+    return (
+      <div className="p-4 sm:p-6 max-w-6xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-[92px] bg-muted rounded-lg animate-pulse" />
+        ))}
+      </div>
+    );
+  }
 
   if (!pid) {
     return (
@@ -70,18 +94,27 @@ export default function Dashboard() {
     pctChange != null ? `${pctChange > 0 ? "+" : ""}${pctChange.toFixed(1)}%` : null;
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
+    <>
+    <h1 className="sr-only">Dashboard</h1>
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-6xl mx-auto">
+      {summaryQuery.isError && (
+        <QueryError
+          error={summaryQuery.error}
+          onRetry={() => summaryQuery.refetch()}
+          isRetrying={summaryQuery.isFetching}
+        />
+      )}
       {/* Summary bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard
-          label="LLM Cost MTD"
+          label="LLM cost MTD"
           value={summary ? formatCurrency(summary.total_cost_mtd) : "—"}
           sub={summary ? `On track for ${formatCurrency(summary.projected_month_end)}` : ""}
           loading={summaryLoading}
           icon={<DollarSign className="h-4 w-4" />}
         />
         <StatCard
-          label="Cost vs last month"
+          label="Month over month"
           value={pctChangeLabel ?? "—"}
           sub={pctChange != null && pctChange > 20 ? "Growing fast" : ""}
           loading={summaryLoading}
@@ -90,14 +123,14 @@ export default function Dashboard() {
           tone="watch"
         />
         <StatCard
-          label="Paying Customers"
+          label="Paying customers"
           value={summary ? formatNumber(summary.total_customers) : "—"}
           sub=""
           loading={summaryLoading}
           icon={<Users className="h-4 w-4" />}
         />
         <StatCard
-          label="At-Risk Customers"
+          label="At-risk customers"
           value={summary ? String(summary.customers_at_risk) : "—"}
           sub={summary?.customers_at_risk ? "Margin < 40%" : "All healthy"}
           loading={summaryLoading}
@@ -107,15 +140,23 @@ export default function Dashboard() {
       </div>
 
       {/* Customers + Features */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Customer table — 3 cols */}
-        <div className="lg:col-span-3 border rounded-xl overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-6">
+        {/* Customer table, 3 cols */}
+        <section aria-labelledby="customers-heading" className="lg:col-span-3 border rounded-xl overflow-hidden bg-card">
           <div className="flex items-center justify-between px-4 py-3 border-b bg-card">
-            <h2 className="font-semibold text-sm">Customers</h2>
+            <h2 id="customers-heading" className="font-semibold text-sm">Customers</h2>
             <span className="text-xs text-muted-foreground">{customers.length} total</span>
           </div>
-          {customersLoading ? (
+          {customersQuery.isLoading ? (
             <LoadingRows n={5} />
+          ) : customersQuery.isError ? (
+            <div className="p-4">
+              <QueryError
+                error={customersQuery.error}
+                onRetry={() => customersQuery.refetch()}
+                isRetrying={customersQuery.isFetching}
+              />
+            </div>
           ) : customers.length === 0 ? (
             <EmptyState message="No customer data yet. Send your first event with the SDK." />
           ) : (
@@ -123,11 +164,11 @@ export default function Dashboard() {
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="border-b bg-muted/40">
-                    <th className="eyebrow text-left px-4 py-2 font-medium">Customer</th>
-                    <th className="eyebrow text-left px-4 py-2 font-medium">Plan</th>
-                    <th className="eyebrow text-right px-4 py-2 font-medium">MRR</th>
-                    <th className="eyebrow text-right px-4 py-2 font-medium whitespace-nowrap">Cost, 30d</th>
-                    <th className="eyebrow text-right px-4 py-2 font-medium">Margin</th>
+                    <th scope="col" className="eyebrow text-left pl-3 pr-2 sm:px-4 py-2 font-medium">Customer</th>
+                    <th scope="col" className="eyebrow text-left px-4 py-2 font-medium hidden sm:table-cell">Plan</th>
+                    <th scope="col" className="eyebrow text-right px-4 py-2 font-medium hidden sm:table-cell">MRR</th>
+                    <th scope="col" className="eyebrow text-right px-2 sm:px-4 py-2 font-medium whitespace-nowrap">Cost, 30d</th>
+                    <th scope="col" className="eyebrow text-right pl-2 pr-3 sm:px-4 py-2 font-medium">Margin</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -138,22 +179,30 @@ export default function Dashboard() {
               </table>
             </div>
           )}
-        </div>
+        </section>
 
-        {/* Feature table — 2 cols */}
-        <div className="lg:col-span-2 border rounded-xl overflow-hidden">
+        {/* Feature table, 2 cols */}
+        <section aria-labelledby="features-heading" className="lg:col-span-2 border rounded-xl overflow-hidden bg-card self-start">
           <div className="flex items-center justify-between px-4 py-3 border-b bg-card">
-            <h2 className="font-semibold text-sm">Features</h2>
+            <h2 id="features-heading" className="font-semibold text-sm">Features</h2>
             <Link
               to={`/dashboard/${pid}/pricing`}
-              className="text-xs text-primary flex items-center gap-1 hover:underline"
+              className="group text-xs text-foreground flex items-center gap-1 link-quiet"
             >
-              Pricing calc
-              <ExternalLink className="h-3 w-3" />
+              Price from this
+              <ArrowRight className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" />
             </Link>
           </div>
-          {featuresLoading ? (
+          {featuresQuery.isLoading ? (
             <LoadingRows n={4} />
+          ) : featuresQuery.isError ? (
+            <div className="p-4">
+              <QueryError
+                error={featuresQuery.error}
+                onRetry={() => featuresQuery.refetch()}
+                isRetrying={featuresQuery.isFetching}
+              />
+            </div>
           ) : features.length === 0 ? (
             <EmptyState message="No feature data yet." />
           ) : (
@@ -163,31 +212,40 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </div>
+        </section>
       </div>
 
       {/* Trend chart */}
       <TrendChart projectId={pid} />
     </div>
+    </>
   );
 }
 
 function CustomerTableRow({ customer: c, projectId }: { customer: CustomerRow; projectId: string }) {
   const navigate = useNavigate();
+  const href = `/dashboard/${projectId}/customers/${encodeURIComponent(c.customer_id)}`;
   return (
     <tr
-      className="border-b last:border-0 h-[38px] hover:bg-muted/30 cursor-pointer transition-colors"
-      onClick={() => navigate(`/dashboard/${projectId}/customers/${c.customer_id}`)}
+      className="border-b last:border-0 h-[42px] sm:h-[38px] hover:bg-muted/40 cursor-pointer transition-colors focus-within:bg-muted/40"
+      onClick={() => navigate(href)}
     >
-      <td className="px-4 font-mono text-xs text-foreground">
-        {c.customer_id.length > 26 ? c.customer_id.slice(0, 24) + "…" : c.customer_id}
+      <td className="pl-3 pr-2 sm:px-4 font-mono text-xs text-foreground max-w-[9.5rem] sm:max-w-[15rem]">
+        <Link
+          to={href}
+          onClick={(e) => e.stopPropagation()}
+          className="block truncate focus-visible:outline-offset-4"
+          title={c.customer_id}
+        >
+          {c.customer_id}
+        </Link>
       </td>
-      <td className="px-4 text-xs text-muted-foreground">{c.plan ?? "—"}</td>
-      <td className="px-4 text-right text-xs figure">
+      <td className="px-4 text-xs text-muted-foreground hidden sm:table-cell">{c.plan ?? "—"}</td>
+      <td className="px-4 text-right text-xs figure hidden sm:table-cell">
         {c.mrr != null ? formatCurrency(c.mrr) : <span className="text-muted-foreground">—</span>}
       </td>
-      <td className="px-4 text-right text-xs figure">{formatCurrency(c.total_cost)}</td>
-      <td className="px-4 text-right">
+      <td className="px-2 sm:px-4 text-right text-xs figure">{formatCurrency(c.total_cost)}</td>
+      <td className="pl-2 pr-3 sm:px-4 text-right whitespace-nowrap">
         {c.margin != null ? (
           <MarginBadge margin={c.margin} status={c.alert_status} />
         ) : (
@@ -222,28 +280,31 @@ function FeatureTableRow({ feature: f }: { feature: FeatureRow }) {
 
 function TrendChart({ projectId }: { projectId: string }) {
   const [days, setDays] = useState(30);
-  const { data: trend, isLoading } = useQuery({
+  const trendQuery = useQuery({
     queryKey: ["trend", projectId, days],
     queryFn: () => api.trend(projectId, days),
   });
+  const { data: trend, isLoading } = trendQuery;
 
   const hasData = (trend?.total_calls ?? 0) > 0;
 
   return (
-    <div className="border rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b bg-card">
-        <div className="flex items-baseline gap-3">
-          <h2 className="font-semibold text-sm">Daily LLM Cost</h2>
+    <section aria-labelledby="trend-heading" className="border rounded-xl overflow-hidden bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 min-w-0">
+          <h2 id="trend-heading" className="font-semibold text-sm">Daily LLM cost</h2>
           {trend && hasData && (
             <span className="text-xs text-muted-foreground tabular-nums">
               {formatCurrency(trend.total_cost)} · {formatNumber(trend.total_calls)} calls
             </span>
           )}
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1" role="group" aria-label="Date range">
           {[7, 30, 90].map((option) => (
             <button
+              type="button"
               key={option}
+              aria-pressed={days === option}
               onClick={() => setDays(option)}
               className={`px-2 py-0.5 rounded text-xs transition-colors ${
                 days === option
@@ -256,9 +317,18 @@ function TrendChart({ projectId }: { projectId: string }) {
           ))}
         </div>
       </div>
-      <div className="p-4 h-56">
+      <div className="p-3 sm:p-4 h-56">
         {isLoading ? (
           <div className="h-full bg-muted rounded animate-pulse" />
+        ) : trendQuery.isError ? (
+          <div className="h-full flex items-center">
+            <QueryError
+              className="w-full"
+              error={trendQuery.error}
+              onRetry={() => trendQuery.refetch()}
+              isRetrying={trendQuery.isFetching}
+            />
+          </div>
         ) : !hasData ? (
           <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
             Send events with the SDK to populate the trend chart.
@@ -312,7 +382,7 @@ function TrendChart({ projectId }: { projectId: string }) {
           </ResponsiveContainer>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -336,17 +406,17 @@ function StatCard({
   const highlightClass =
     tone === "watch" ? "border-watch/40 bg-watch/5" : "border-loss/40 bg-loss/5";
   return (
-    <div className={`border rounded-lg px-4 py-3.5 ${highlight ? highlightClass : "bg-card"}`}>
-      <div className="flex items-center gap-1.5 mb-1.5 [&_svg]:h-3.5 [&_svg]:w-3.5 text-muted-foreground">
+    <div className={`border rounded-lg px-3 sm:px-4 py-3 sm:py-3.5 min-w-0 ${highlight ? highlightClass : "bg-card"}`}>
+      <div className="flex items-center gap-1.5 mb-1.5 [&_svg]:h-3.5 [&_svg]:w-3.5 [&_svg]:shrink-0 text-muted-foreground">
         {icon}
-        <span className="eyebrow">{label}</span>
+        <span className="eyebrow truncate">{label}</span>
       </div>
       {loading ? (
-        <div className="h-7 w-24 bg-muted rounded animate-pulse" />
+        <div className="h-7 w-24 max-w-full bg-muted rounded animate-pulse" />
       ) : (
-        <p className="text-[26px] leading-8 font-semibold figure tracking-tight">{value}</p>
+        <p className="text-[21px] leading-7 sm:text-[26px] sm:leading-8 font-semibold figure tracking-tight truncate">{value}</p>
       )}
-      {sub && <p className="text-xs text-muted-foreground mt-1 figure">{sub}</p>}
+      {sub && <p className="text-xs text-muted-foreground mt-1 figure leading-snug">{sub}</p>}
     </div>
   );
 }

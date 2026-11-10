@@ -3,51 +3,65 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { api, TierAnalysis } from "@/lib/api";
+import { QueryError } from "@/components/QueryError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
 export default function PricingCalculator() {
   const { projectId } = useParams();
-  const [targetMargin, setTargetMargin] = useState(0.70);
+  const [targetMargin, setTargetMargin] = useState(0.7);
+  usePageTitle("Pricing calculator");
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["calculator", projectId, targetMargin],
     queryFn: () => api.calculator(projectId!, targetMargin),
     enabled: !!projectId,
+    placeholderData: (previous) => previous,
   });
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="px-4 pt-6 pb-4 sm:p-6 max-w-3xl mx-auto space-y-4 sm:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold mb-1">Pricing Calculator</h1>
-        <p className="text-muted-foreground text-sm">
-          Based on your actual last-30-day usage — what do you need to charge to hit your margin target?
+        <h1 className="font-display text-[28px] sm:text-3xl font-medium tracking-[-0.01em] mb-1.5">
+          Pricing calculator
+        </h1>
+        <p className="text-muted-foreground text-sm max-w-[60ch]">
+          What each plan has to cost to hit your margin target, from the last 30 days of real usage.
         </p>
       </div>
 
       {/* Target margin control */}
-      <div className="border rounded-xl px-5 py-4 bg-card space-y-3">
+      <div className="border rounded-xl px-4 sm:px-5 py-4 bg-card space-y-3">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">Target gross margin</label>
-          <span className="text-xl font-bold text-primary">{(targetMargin * 100).toFixed(0)}%</span>
+          <label htmlFor="target-margin" className="text-sm font-medium">
+            Target gross margin
+          </label>
+          <output htmlFor="target-margin" className="text-xl font-semibold figure">
+            {(targetMargin * 100).toFixed(0)}%
+          </output>
         </div>
         <input
+          id="target-margin"
           type="range"
-          min={0.30}
+          min={0.3}
           max={0.95}
           step={0.05}
           value={targetMargin}
           onChange={(e) => setTargetMargin(parseFloat(e.target.value))}
+          aria-valuetext={`${(targetMargin * 100).toFixed(0)} percent`}
           className="w-full accent-foreground"
         />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>30%</span>
-          <span>70% (recommended)</span>
-          <span>95%</span>
+        <div className="relative h-4 text-xs text-muted-foreground figure">
+          <span className="absolute left-0">30%</span>
+          <span className="absolute -translate-x-1/2" style={{ left: `${((0.7 - 0.3) / 0.65) * 100}%` }}>
+            70% typical
+          </span>
+          <span className="absolute right-0">95%</span>
         </div>
       </div>
 
       {/* Tier results */}
-      {isLoading && (
+      {isLoading && !data && (
         <div className="space-y-4">
           {[1, 2].map((i) => (
             <div key={i} className="h-48 bg-muted rounded-xl animate-pulse" />
@@ -55,15 +69,11 @@ export default function PricingCalculator() {
         </div>
       )}
 
-      {error && (
-        <div className="border border-destructive/50 bg-destructive/5 rounded-xl px-4 py-3 text-sm text-destructive">
-          Failed to load pricing data. Make sure you have customer usage data in the last 30 days.
-        </div>
-      )}
+      {isError && <QueryError error={error} onRetry={() => refetch()} isRetrying={isFetching} />}
 
       {data?.tiers.length === 0 && !isLoading && (
-        <div className="border rounded-xl px-4 py-8 text-center text-muted-foreground text-sm">
-          No usage data yet. Send events via the SDK to populate the pricing calculator.
+        <div className="border rounded-xl px-4 py-8 text-center text-muted-foreground text-sm bg-card">
+          No usage in the last 30 days yet. Send events with the SDK and the calculator fills in per plan.
         </div>
       )}
 
@@ -75,11 +85,9 @@ export default function PricingCalculator() {
 }
 
 function TierCard({ tier, targetMargin }: { tier: TierAnalysis; targetMargin: number }) {
-  const marginOk = (v: number) => v >= targetMargin;
-
   return (
-    <div className="border rounded-xl overflow-hidden bg-card">
-      <div className="flex items-center justify-between px-5 py-3 border-b bg-muted/30">
+    <section className="border rounded-xl overflow-hidden bg-card">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b bg-muted/30">
         <div>
           <h2 className="font-semibold">{tier.tier_name}</h2>
           <p className="text-xs text-muted-foreground">{tier.customer_count} customers</p>
@@ -87,23 +95,23 @@ function TierCard({ tier, targetMargin }: { tier: TierAnalysis; targetMargin: nu
         {tier.current_price && (
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Current price</p>
-            <p className="text-lg font-bold">{formatCurrency(tier.current_price)}/mo</p>
+            <p className="text-lg font-semibold figure">{formatCurrency(tier.current_price)}/mo</p>
           </div>
         )}
       </div>
 
-      <div className="px-5 py-4 space-y-5">
+      <div className="px-4 sm:px-5 py-4 space-y-5">
         {/* Usage stats */}
-        <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-3 gap-3 sm:gap-4 text-sm">
           <div>
             <p className="text-xs text-muted-foreground mb-0.5">Median usage</p>
-            <p className="font-semibold">{formatNumber(tier.median_calls)} calls/mo</p>
-            <p className="text-xs text-muted-foreground">{formatCurrency(tier.median_cogs)} COGS</p>
+            <p className="font-semibold figure">{formatNumber(tier.median_calls)} calls/mo</p>
+            <p className="text-xs text-muted-foreground figure">{formatCurrency(tier.median_cogs)} COGS</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground mb-0.5">P90 usage</p>
-            <p className="font-semibold">{formatNumber(tier.p90_calls)} calls/mo</p>
-            <p className="text-xs text-muted-foreground">{formatCurrency(tier.p90_cogs)} COGS</p>
+            <p className="font-semibold figure">{formatNumber(tier.p90_calls)} calls/mo</p>
+            <p className="text-xs text-muted-foreground figure">{formatCurrency(tier.p90_cogs)} COGS</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground mb-0.5">P99 COGS</p>
@@ -113,16 +121,16 @@ function TierCard({ tier, targetMargin }: { tier: TierAnalysis; targetMargin: nu
         </div>
 
         {/* Price recommendation */}
-        <div className="bg-muted/40 rounded-md px-4 py-3 space-y-2">
-          <div className="flex items-center justify-between">
+        <div className="bg-muted/40 rounded-md px-3 sm:px-4 py-3 space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
             <span className="text-sm text-muted-foreground">Break-even price (median COGS)</span>
-            <span className="figure text-sm">{formatCurrency(tier.break_even_price)}/mo</span>
+            <span className="figure text-sm whitespace-nowrap">{formatCurrency(tier.break_even_price)}/mo</span>
           </div>
-          <div className="flex items-center justify-between">
+          <div className="flex items-baseline justify-between gap-3">
             <span className="text-sm font-medium">
               Recommended price <span className="text-xs text-muted-foreground">(for {(targetMargin * 100).toFixed(0)}% margin)</span>
             </span>
-            <span className="figure text-lg font-semibold">
+            <span className="figure text-lg font-semibold whitespace-nowrap">
               {formatCurrency(tier.recommended_price)}/mo
             </span>
           </div>
@@ -163,7 +171,7 @@ function TierCard({ tier, targetMargin }: { tier: TierAnalysis; targetMargin: nu
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -178,7 +186,8 @@ function MarginRow({
   targetMargin: number;
   highlight?: boolean;
 }) {
-  const pct = (margin * 100).toFixed(1);
+  const pct =
+    margin < 0 ? `(${Math.abs(margin * 100).toFixed(1)})` : (margin * 100).toFixed(1);
   const ok = margin >= targetMargin;
   const tone = ok ? "profit" : margin >= 0 ? "watch" : "loss";
   const toneText = { profit: "text-profit", watch: "text-watch", loss: "text-loss" }[tone];
@@ -186,7 +195,7 @@ function MarginRow({
 
   return (
     <div className="flex items-center justify-between text-sm">
-      <span className="text-muted-foreground">{label}</span>
+      <span className={highlight ? "text-foreground" : "text-muted-foreground"}>{label}</span>
       <span className={`inline-flex items-center gap-1.5 font-medium figure ${toneText}`}>
         <span className={`h-1.5 w-1.5 rounded-full ${toneDot}`} />
         {pct}%
